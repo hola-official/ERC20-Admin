@@ -1,122 +1,136 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.0;
 
-contract DltToken {
-    string public tokenName;
-    string public tokenSymbol;
-    uint256 public totalSupply;
-    address public owner;
-    mapping(address => uint256) public balances;
-    mapping(address => uint256) public admin;
-    mapping(address => mapping(address => uint256)) public allow;
+contract AccessControl {
+    address public admin;
+    mapping(address => bool) public authorizedMinters;
 
-    constructor(string memory _name, string memory _symbol) {
-        tokenName = _name;
-        tokenSymbol = _symbol;
-        owner = msg.sender;
+    event AdminChanged(address indexed previousAdmin, address indexed newAdmin);
+    event MinterAdded(address indexed minter);
+    event MinterRemoved(address indexed minter);
 
-        mint(1_000_000, owner);
+    constructor() {
+        admin = msg.sender;
     }
 
-    event Transfer(
-        address indexed sender,
-        address indexed receiver,
-        uint256 amount
-    );
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin can call this function");
+        _;
+    }
+
+    modifier onlyMinter() {
+        require(
+            authorizedMinters[msg.sender] || msg.sender == admin,
+            "Only minters can call this function"
+        );
+        _;
+    }
+
+    function changeAdmin(address _newAdmin) external onlyAdmin {
+        require(_newAdmin != address(0), "New admin cannot be zero address");
+        emit AdminChanged(admin, _newAdmin);
+        admin = _newAdmin;
+    }
+
+    function addMinter(address _minter) external onlyAdmin {
+        require(_minter != address(0), "Minter cannot be zero address");
+        require(!authorizedMinters[_minter], "Address is already a minter");
+        authorizedMinters[_minter] = true;
+        emit MinterAdded(_minter);
+    }
+
+    function removeMinter(address _minter) external onlyAdmin {
+        require(authorizedMinters[_minter], "Address is not a minter");
+        authorizedMinters[_minter] = false;
+        emit MinterRemoved(_minter);
+    }
+}
+
+contract ERC20Token is AccessControl {
+    string public name;
+    string public symbol;
+    uint8 public decimals;
+    uint256 public totalSupply;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(
         address indexed owner,
         address indexed spender,
-        uint256 amount
+        uint256 value
     );
+    event TokensMinted(address indexed to, uint256 amount);
+    event TokensBurned(address indexed from, uint256 amount);
 
-    function adminOnly() external {
-        require(msg.sender != address(0), "Not allowed");
-        
+    constructor(string memory _name, string memory _symbol, uint8 _decimals) {
+        name = _name;
+        symbol = _symbol;
+        decimals = _decimals;
     }
 
-    function getTokenName() external view returns (string memory) {
-        return tokenName;
+    function mint(address _to, uint256 _amount) external onlyMinter {
+        require(_to != address(0), "Cannot mint to zero address");
+        balanceOf[_to] += _amount;
+        totalSupply += _amount;
+        emit TokensMinted(_to, _amount);
+        emit Transfer(address(0), _to, _amount);
     }
 
-    function getSymbol() external view returns (string memory) {
-        return tokenSymbol;
+    function burn(uint256 _amount) external {
+        require(
+            balanceOf[msg.sender] >= _amount,
+            "Insufficient balance to burn"
+        );
+        balanceOf[msg.sender] -= _amount;
+        totalSupply -= _amount;
+        emit TokensBurned(msg.sender, _amount);
+        emit Transfer(msg.sender, address(0), _amount);
     }
 
-    function getTotalSupply() external view returns (uint256) {
-        return totalSupply;
+    function transfer(address _to, uint256 _amount) external returns (bool) {
+        require(_to != address(0), "Cannot transfer to zero address");
+        require(balanceOf[msg.sender] >= _amount, "Insufficient balance");
+
+        balanceOf[msg.sender] -= _amount;
+        balanceOf[_to] += _amount;
+
+        emit Transfer(msg.sender, _to, _amount);
+        return true;
     }
 
-    function decimal() external pure returns (uint8) {
-        return 18;
-    }
+    function approve(
+        address _spender,
+        uint256 _amount
+    ) external returns (bool) {
+        require(_spender != address(0), "Cannot approve zero address");
 
-    function balanceOf(address _address) external view returns (uint256) {
-        return balances[_address];
-    }
-
-    function transfer(address _receiver, uint256 _amountOfToken) external {
-        require(_receiver != address(0), "Address is not allowed");
-        require(_amountOfToken <= balances[msg.sender], "Insufficient balance");
-
-        uint256 burnAmount = (_amountOfToken * 5) / 100;
-        uint256 transferAmount = _amountOfToken - burnAmount;
-
-        balances[msg.sender] -= _amountOfToken;
-        balances[_receiver] += transferAmount;
-        burn(address(0), burnAmount);
-
-        emit Transfer(msg.sender, _receiver, transferAmount);
-    }
-
-    function approve(address _delegate, uint256 _amountOfToken) external {
-        require(balances[msg.sender] >= _amountOfToken, "Insufficient balance");
-        allow[msg.sender][_delegate] = _amountOfToken;
-        emit Approval(msg.sender, _delegate, _amountOfToken);
-    }
-
-    function allowance(
-        address _owner,
-        address _delegate
-    ) external view returns (uint256) {
-        return allow[_owner][_delegate];
+        allowance[msg.sender][_spender] = _amount;
+        emit Approval(msg.sender, _spender, _amount);
+        return true;
     }
 
     function transferFrom(
-        address _owner,
-        address _buyer,
-        uint256 _amountOfToken
-    ) external {
+        address _from,
+        address _to,
+        uint256 _amount
+    ) external returns (bool) {
         require(
-            _owner != address(0) && _buyer != address(0),
-            "Invalid address"
+            _from != address(0) && _to != address(0),
+            "Cannot transfer to/from zero address"
         );
-        require(_amountOfToken <= balances[_owner], "Insufficient balance");
+        require(balanceOf[_from] >= _amount, "Insufficient balance");
         require(
-            _amountOfToken <= allow[_owner][msg.sender],
+            allowance[_from][msg.sender] >= _amount,
             "Insufficient allowance"
         );
 
-        uint256 burnAmount = (_amountOfToken * 5) / 100;
-        uint256 transferAmount = _amountOfToken - burnAmount;
+        balanceOf[_from] -= _amount;
+        balanceOf[_to] += _amount;
+        allowance[_from][msg.sender] -= _amount;
 
-        balances[_owner] -= _amountOfToken;
-        allow[_owner][msg.sender] -= _amountOfToken;
-        balances[_buyer] += transferAmount;
-        burn(address(0), burnAmount);
-
-        emit Transfer(_owner, _buyer, transferAmount);
-    }
-
-    function burn(address _address, uint256 _amount) internal {
-        balances[_address] -= _amount;
-        totalSupply -= _amount;
-        emit Transfer(_address, address(0), _amount);
-    }
-
-    function mint(uint256 _amount, address _addr) internal {
-        uint256 actualSupply = _amount * (10 ** 18);
-        balances[_addr] += actualSupply;
-        totalSupply += actualSupply;
-        emit Transfer(address(0), _addr, actualSupply);
+        emit Transfer(_from, _to, _amount);
+        return true;
     }
 }
