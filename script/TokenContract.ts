@@ -9,7 +9,6 @@ async function main() {
 
     const Token = await hre.ethers.getContractFactory("ERC20Token");
     const token = await Token.deploy("Muhammed Musa", "MM", 18);
-    await token.waitForDeployment();
     const tokenAddress = await token.getAddress();
 
     console.log(`Token deployed to: ${tokenAddress}`);
