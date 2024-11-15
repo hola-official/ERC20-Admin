@@ -7,8 +7,8 @@ async function main() {
 
     const [owner, addr1, addr2] = await hre.ethers.getSigners();
 
-    const Token = await hre.ethers.getContractFactory("CustomToken");
-    const token = await Token.deploy("MyToken", "MTK", 18);
+    const Token = await hre.ethers.getContractFactory("ERC20Token");
+    const token = await Token.deploy("Muhammed Musa", "MM", 18);
     await token.waitForDeployment();
     const tokenAddress = await token.getAddress();
 
@@ -46,8 +46,8 @@ async function main() {
     const addr2Balance = await token.balanceOf(addr2.address);
 
     console.log("\nFinal Balances:");
-    console.log(`Owner: ${hre.ethers.formatUnits(ownerBalance, 18)} MTK`);
-    console.log(`Addr2: ${hre.ethers.formatUnits(addr2Balance, 18)} MTK`);
+    console.log(`Owner: ${hre.ethers.formatUnits(ownerBalance, 18)} MM`);
+    console.log(`Addr2: ${hre.ethers.formatUnits(addr2Balance, 18)} MM`);
   } catch (error) {
     console.error("Error:", error);
     process.exit(1);
